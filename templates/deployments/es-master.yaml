@@ -1,0 +1,84 @@
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: es-master
+  labels:
+    component: elasticsearch
+    role: master
+spec:
+  minReadySeconds: 90
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  replicas: {MASTER_NODE_COUNT}
+  template:
+    metadata:
+      labels:
+        component: elasticsearch
+        role: master
+    spec:
+      initContainers:
+      - name: init-sysctl
+        image: busybox
+        imagePullPolicy: IfNotPresent
+        command: ["sysctl", "-w", "vm.max_map_count=262144"]
+        securityContext:
+          privileged: true
+      containers:
+      - name: es-master
+        securityContext:
+          privileged: false
+          capabilities:
+            add:
+              - IPC_LOCK
+              - SYS_RESOURCE
+        image: {ES_MASTER_IMAGE}
+        imagePullPolicy: Always
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: "CLUSTER_NAME"
+          value: "{CLUSTER_NAME}"
+        - name: "DISCOVERY_ZEN_MINIMUM_MASTER_NODES"
+          value: "{MASTER_MIN_COUNT}"
+        - name: "NODE_MASTER"
+          value: "true"
+        - name: "NODE_DATA"
+          value: "false"
+        - name: "NODE_INGEST"
+          value: "false"
+        - name: "HTTP_ENABLED"
+          value: "false"
+        - name: "DISCOVERY_SERVICE"
+          value: "{ELASTICSEARCH_DISCOVERY_SERVICE}"
+        - name: "ES_JAVA_OPTS"
+          value: "-Xms{ES_MASTER_HEAP} -Xmx{ES_MASTER_HEAP}"
+        resources:
+          request:
+            memory: "{MASTER_MEMORY_COUNT}"
+            cpu: "{MASTER_CPU_COUNT}"
+        ports:
+        - containerPort: {TRANSPORT_TCP_PORT}
+          name: transport
+          protocol: TCP
+        livenessProbe:
+          tcpSocket:
+            port: {TRANSPORT_TCP_PORT}
+          initialDelaySeconds: 60
+          timeoutSeconds: 5
+        volumeMounts:
+        - name: storage
+          mountPath: /data
+      volumes:
+          - emptyDir:
+              medium: ""
+            name: "storage"
